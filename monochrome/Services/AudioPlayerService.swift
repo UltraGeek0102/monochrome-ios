@@ -181,6 +181,7 @@ class AudioPlayerService: ObservableObject {
     }
 
     private var savedQueueForRepeatOne: [Track] = []
+    private var stopAfterCurrentTrack = false  // Sleep timer
     private let restartThreshold: TimeInterval = 3
     private let historyMaxCount = 100
 
@@ -354,6 +355,8 @@ class AudioPlayerService: ObservableObject {
         self.isShuffled = false
         self.originalQueue = []
         self.currentTrack = track
+        ScrobblingService.shared.trackDidStart(track)  // Scrobbling
+        SleepTimerService.shared.onTimerFired = { [weak self] in self?.stopAfterCurrentTrack = true }  // Sleep timer
         self.currentTrackTitle = track.title
         self.currentArtistName = track.artist?.name ?? "Unknown Artist"
         self.currentAlbumTitle = track.album?.title ?? ""
@@ -441,6 +444,7 @@ class AudioPlayerService: ObservableObject {
 
         if isPlaying {
             player?.pause()
+            ScrobblingService.shared.trackDidStop()  // Scrobbling
         } else {
             player?.play()
         }
@@ -559,6 +563,16 @@ class AudioPlayerService: ObservableObject {
     }
 
     func nextTrack() {
+        // Sleep timer: stop after current track ends
+        if stopAfterCurrentTrack {
+            stopAfterCurrentTrack = false
+            player?.pause()
+            isPlaying = false
+            updateNowPlayingInfo()
+            saveState()
+            return
+        }
+
         // Repeat one: replay the current track from the beginning
         if repeatMode == .one, let current = currentTrack {
             // Re-stream the track (AVPlayerItem is consumed at end)
