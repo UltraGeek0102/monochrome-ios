@@ -11,6 +11,8 @@ struct NowPlayingView: View {
     @State private var showQueue = false
     @State private var isDraggingSlider = false
     @State private var localSeekValue: Double = 0
+    @State private var showSleepTimer = false
+    @State private var isLoadingRadio = false
 
     // Real screen dimensions — always correct regardless of view hierarchy
     private let screenW = UIScreen.main.bounds.width
@@ -349,41 +351,74 @@ struct NowPlayingView: View {
     // MARK: - Queue Info
 
     private var queueInfo: some View {
-        HStack {
-            Button(action: { audioPlayer.toggleShuffle() }) {
-                Image(systemName: "shuffle")
+    HStack {
+        Button(action: { audioPlayer.toggleShuffle() }) {
+            Image(systemName: "shuffle")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(.white.opacity(audioPlayer.isShuffled ? 1.0 : 0.4))
+        }
+        .frame(width: 44, height: 44)
+
+        Spacer()
+
+        // Sleep Timer button
+        Button {
+            showSleepTimer = true
+        } label: {
+            ZStack {
+                Image(systemName: "moon.fill")
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(.white.opacity(audioPlayer.isShuffled ? 1.0 : 0.4))
-            }
-            .frame(width: 44, height: 44)
-
-            Spacer()
-
-            if !audioPlayer.queuedTracks.isEmpty {
-                Button(action: { showQueue = true }) {
-                    Text("\(audioPlayer.queuedTracks.count) track\(audioPlayer.queuedTracks.count > 1 ? "s" : "") in queue")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(.white.opacity(SleepTimerService.shared.isActive ? 1.0 : 0.4))
+                if SleepTimerService.shared.isActive {
+                    // Countdown badge
+                    Text(SleepTimerService.shared.remainingFormatted)
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 3)
+                        .background(.white)
+                        .clipShape(Capsule())
+                        .offset(x: 10, y: -10)
                 }
             }
+        }
+        .frame(width: 44, height: 44)
 
-            Spacer()
+        Spacer()
 
-            Button(action: { audioPlayer.cycleRepeatMode() }) {
-                Image(systemName: audioPlayer.repeatMode == .one ? "repeat.1" : "repeat")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(.white.opacity(audioPlayer.repeatMode != .off ? 1.0 : 0.4))
-            }
-            .frame(width: 44, height: 44)
-
-            Button(action: { showQueue = true }) {
-                Image(systemName: "list.bullet")
+        // Infinite Radio button
+        Button {
+            Task { await startInfiniteRadio() }
+        } label: {
+            if isLoadingRadio {
+                ProgressView()
+                    .tint(.white.opacity(0.6))
+                    .scaleEffect(0.7)
+            } else {
+                Image(systemName: "dot.radiowaves.left.and.right")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundColor(.white.opacity(0.4))
             }
-            .frame(width: 44, height: 44)
         }
+        .frame(width: 44, height: 44)
+        .disabled(isLoadingRadio)
+
+        Spacer()
+
+        Button(action: { audioPlayer.cycleRepeatMode() }) {
+            Image(systemName: audioPlayer.repeatMode == .one ? "repeat.1" : "repeat")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(.white.opacity(audioPlayer.repeatMode != .off ? 1.0 : 0.4))
+        }
+        .frame(width: 44, height: 44)
+
+        Button(action: { showQueue = true }) {
+            Image(systemName: "list.bullet")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(.white.opacity(0.4))
+        }
+        .frame(width: 44, height: 44)
     }
+}
 
     private func formatTime(_ time: TimeInterval) -> String {
         guard time > 0 && !time.isNaN else { return "0:00" }
