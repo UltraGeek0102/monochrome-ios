@@ -588,6 +588,119 @@ class MonochromeAPI {
         let formattedId = id.replacingOccurrences(of: "-", with: "/")
         return URL(string: "https://resources.tidal.com/images/\(formattedId)/\(size)x\(size).jpg")
     }
+    // Add these methods to MonochromeAPI.swift
+
+    // MARK: - Infinite Radio / Recommendations
+    
+    /// Fetches track recommendations based on a seed track ID.
+    /// Used for Infinite Radio — append the result to the queue and keep calling as the queue drains.
+    func fetchRecommendations(trackId: Int) async throws -> [Track] {
+        let data = try await fetchData(path: "/recommendations/?id=\(trackId)")
+        // Response: { data: { items: [...] } }
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let dataDict = json["data"] as? [String: Any],
+           let items = dataDict["items"] as? [[String: Any]],
+           let arrData = try? JSONSerialization.data(withJSONObject: items),
+           let tracks = try? JSONDecoder().decode([Track].self, from: arrData) {
+            return tracks
+        }
+        return []
+    }
+    
+    // MARK: - Mix Detail
+    
+    struct MixDetail: Decodable {
+        let id: String
+        let title: String?
+        let tracks: [Track]
+    }
+    
+    func fetchMix(id: String) async throws -> MixItem {
+        let data = try await fetchData(path: "/mix/?id=\(id)")
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    
+        // Parse title
+        let title = (json?["data"] as? [String: Any])?["title"] as? String
+            ?? (json?["data"] as? [String: Any])?["mixName"] as? String
+    
+        // Parse cover images
+        var images: [MixItem.MixImage] = []
+        if let imgArr = (json?["data"] as? [String: Any])?["images"] as? [[String: Any]] {
+            images = imgArr.compactMap { dict in
+                guard let url = dict["url"] as? String else { return nil }
+                return MixItem.MixImage(url: url, width: dict["width"] as? Int, height: dict["height"] as? Int)
+            }
+        }
+    
+        return MixItem(id: id, title: title, images: images.isEmpty ? nil : images)
+    }
+    
+    func fetchMixTracks(id: String) async throws -> [Track] {
+        let data = try await fetchData(path: "/mix/?id=\(id)")
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    
+        guard let dataDict = json?["data"] as? [String: Any],
+              let items = dataDict["tracks"] as? [[String: Any]] ?? (dataDict["items"] as? [[String: Any]]),
+              let arrData = try? JSONSerialization.data(withJSONObject: items) else { return [] }
+    
+        return (try? JSONDecoder().decode([Track].self, from: arrData)) ?? []
+    }// Add these methods to MonochromeAPI.swift
+    
+    // MARK: - Infinite Radio / Recommendations
+    
+    /// Fetches track recommendations based on a seed track ID.
+    /// Used for Infinite Radio — append the result to the queue and keep calling as the queue drains.
+    func fetchRecommendations(trackId: Int) async throws -> [Track] {
+        let data = try await fetchData(path: "/recommendations/?id=\(trackId)")
+        // Response: { data: { items: [...] } }
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let dataDict = json["data"] as? [String: Any],
+           let items = dataDict["items"] as? [[String: Any]],
+           let arrData = try? JSONSerialization.data(withJSONObject: items),
+           let tracks = try? JSONDecoder().decode([Track].self, from: arrData) {
+            return tracks
+        }
+        return []
+    }
+    
+    // MARK: - Mix Detail
+    
+    struct MixDetail: Decodable {
+        let id: String
+        let title: String?
+        let tracks: [Track]
+    }
+    
+    func fetchMix(id: String) async throws -> MixItem {
+        let data = try await fetchData(path: "/mix/?id=\(id)")
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    
+        // Parse title
+        let title = (json?["data"] as? [String: Any])?["title"] as? String
+            ?? (json?["data"] as? [String: Any])?["mixName"] as? String
+    
+        // Parse cover images
+        var images: [MixItem.MixImage] = []
+        if let imgArr = (json?["data"] as? [String: Any])?["images"] as? [[String: Any]] {
+            images = imgArr.compactMap { dict in
+                guard let url = dict["url"] as? String else { return nil }
+                return MixItem.MixImage(url: url, width: dict["width"] as? Int, height: dict["height"] as? Int)
+            }
+        }
+    
+        return MixItem(id: id, title: title, images: images.isEmpty ? nil : images)
+    }
+    
+    func fetchMixTracks(id: String) async throws -> [Track] {
+        let data = try await fetchData(path: "/mix/?id=\(id)")
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    
+        guard let dataDict = json?["data"] as? [String: Any],
+              let items = dataDict["tracks"] as? [[String: Any]] ?? (dataDict["items"] as? [[String: Any]]),
+              let arrData = try? JSONSerialization.data(withJSONObject: items) else { return [] }
+    
+        return (try? JSONDecoder().decode([Track].self, from: arrData)) ?? []
+    }
 }
 
 // MARK: - Detail Models
