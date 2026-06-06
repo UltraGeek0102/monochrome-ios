@@ -3,30 +3,23 @@ name: Build IPA (Latest Xcode)
 on:
   push:
     branches: [ "master" ]
+  workflow_dispatch:   # allows manual trigger from Actions tab
 
 jobs:
   build:
     name: Build unsigned IPA
-    runs-on: macos-26
+    runs-on: macos-latest   # macos-26 runner isn't publicly available yet
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select latest Xcode (26.x)
+      - name: Select latest Xcode
         run: |
           set -e
-
           echo "Available Xcode versions:"
-          ls /Applications | grep Xcode
-
-          # Force latest stable Xcode installed
-          if [ -d "/Applications/Xcode_26.2.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_26.2.app
-          else
-            sudo xcode-select -s /Applications/Xcode.app
-          fi
-
+          ls /Applications | grep Xcode || true
+          sudo xcode-select -s /Applications/Xcode.app
           xcodebuild -version
 
       - name: Build & Archive
@@ -41,7 +34,7 @@ jobs:
           rm -rf "$BUILD_DIR"
           mkdir -p "$BUILD_DIR"
 
-          echo "Archiving with latest iOS SDK..."
+          echo "Archiving..."
 
           xcodebuild archive \
             -project "$APP_NAME.xcodeproj" \
@@ -62,25 +55,26 @@ jobs:
           BUILD_DIR="$GITHUB_WORKSPACE/build"
           ARCHIVE_PATH="$BUILD_DIR/$APP_NAME.xcarchive"
           IPA_PATH="$GITHUB_WORKSPACE/$APP_NAME.ipa"
-
           APP_PATH="$ARCHIVE_PATH/Products/Applications/$APP_NAME.app"
 
           if [ ! -d "$APP_PATH" ]; then
-            echo "❌ App not found"
+            echo "❌ App not found at $APP_PATH"
+            echo "Contents of archive Products:"
+            find "$ARCHIVE_PATH/Products" -maxdepth 3 || true
             exit 1
           fi
 
           echo "Packaging IPA..."
-
           mkdir Payload
           cp -r "$APP_PATH" Payload/
           zip -r -q "$IPA_PATH" Payload
           rm -rf Payload
 
-          echo "✅ IPA created: $IPA_PATH"
+          echo "✅ IPA: $(du -sh $IPA_PATH | cut -f1)"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: monochrome.ipa
           path: monochrome.ipa
+          retention-days: 14
