@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // MARK: - API Models
 
@@ -280,7 +281,7 @@ struct ExploreView: View {
             } else {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     ForEach(vm.mixes) { mix in
-                        MixCard(mix: mix, navigationPath: $navigationPath)
+                        ExploreMixCard(mix: mix, navigationPath: $navigationPath)
                     }
                 }
                 .padding(16)
@@ -359,7 +360,7 @@ struct HotTrackCard: View {
 
 // MARK: - MixCard
 
-struct MixCard: View {
+struct ExploreMixCard: View {
     let mix: MixItem
     @Binding var navigationPath: CompatNavigationPath
 
