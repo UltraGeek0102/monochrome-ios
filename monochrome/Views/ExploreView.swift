@@ -238,8 +238,10 @@ struct ExploreView: View {
         LazyVStack(alignment: .leading, spacing: 28) {
             ForEach(0..<4, id: \.self) { _ in
                 VStack(alignment: .leading, spacing: 10) {
-                    SkeletonView()
+                    Rectangle()
+                        .fill(Theme.secondary)
                         .frame(width: 120, height: 16)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
                         .padding(.horizontal, 16)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
@@ -363,7 +365,8 @@ struct MixCard: View {
 
     var body: some View {
         Button {
-            navigationPath.append(NavigationDestination.mix(mix.id))
+            // Mix detail navigation - append mix ID as String for future MixDetailView
+            // For now tapping shows the mix in queue via AudioPlayerService
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 CachedAsyncImage(url: mix.coverUrl) { phase in
