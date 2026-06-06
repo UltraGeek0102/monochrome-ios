@@ -123,7 +123,6 @@ struct SleepTimerView: View {
                     }
                 }
                 .listStyle(.insetGrouped)
-                .scrollContentBackground(.hidden)
                 .background(Theme.background)
             }
             .background(Theme.background)
