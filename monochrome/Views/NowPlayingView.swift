@@ -9,12 +9,13 @@ struct NowPlayingView: View {
     @EnvironmentObject private var libraryManager: LibraryManager
     @EnvironmentObject private var downloadManager: DownloadManager
     @State private var showQueue = false
+    @State private var showSleepTimer = false          // NEW
     @State private var isDraggingSlider = false
     @State private var localSeekValue: Double = 0
-    @State private var showSleepTimer = false
-    @State private var isLoadingRadio = false
+    @State private var isLoadingRadio = false          // NEW
+    @ObservedObject private var sleepTimer = SleepTimerService.shared  // NEW
 
-    // Real screen dimensions — always correct regardless of view hierarchy
+    // Real screen dimensions
     private let screenW = UIScreen.main.bounds.width
     private let screenH = UIScreen.main.bounds.height
     private var safeT: CGFloat {
@@ -33,73 +34,59 @@ struct NowPlayingView: View {
     var body: some View {
         let usable = screenH - safeT - safeB
         let padX: CGFloat = 24
-        // Art: 42% of usable height, capped at content width
         let artSize = min(screenW - padX * 2, usable * 0.42)
-
-        // Layout budget (% of usable height):
-        //   handle  3%  +  topBar  6%  +  gap  2%
-        //   art    42%  (or less if width-capped)
-        //   gap     3%  +  info   7%  +  gap  1.5%
-        //   prog    7%  +  gap  0.5%  +  ctrl 11%
-        //   gap     1%  +  queue  5%
-        //   TOTAL: 89% → 11% breathing room
 
         ZStack {
             backgroundLayer
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
-                    // -- Handle: 3% --
+                    // Handle: 3%
                     Capsule()
                         .fill(.white.opacity(0.4))
                         .frame(width: 36, height: 5)
                         .frame(height: usable * 0.03)
 
-                    // -- Top bar: 6% --
+                    // Top bar: 6%
                     topBar
                         .frame(height: usable * 0.06)
 
-                    // -- Gap: 2% --
-                    Color.clear
-                        .frame(height: usable * 0.02)
+                    // Gap: 2%
+                    Color.clear.frame(height: usable * 0.02)
 
-                    // -- Album art: 42% (capped at width) --
+                    // Album art: 42%
                     albumArt
                         .frame(width: artSize, height: artSize)
 
-                    // -- Gap: 3% --
-                    Color.clear
-                        .frame(height: usable * 0.03)
+                    // Gap: 3%
+                    Color.clear.frame(height: usable * 0.03)
 
-                    // -- Track info: 7% --
+                    // Track info: 7%
                     trackInfo
                         .frame(height: usable * 0.07)
 
-                    // -- Gap: 1.5% --
-                    Color.clear
-                        .frame(height: usable * 0.015)
+                    // Gap: 1.5%
+                    Color.clear.frame(height: usable * 0.015)
 
-                    // -- Progress: 7% --
+                    // Progress: 7%
                     progressBar
                         .frame(height: usable * 0.07)
 
-                    // -- Gap: 0.5% --
-                    Color.clear
-                        .frame(height: usable * 0.005)
+                    // Gap: 0.5%
+                    Color.clear.frame(height: usable * 0.005)
 
-                    // -- Controls: 11% --
+                    // Controls: 11%
                     controls
                         .frame(height: usable * 0.11)
 
-                    // -- Gap: 1% --
-                    Color.clear
-                        .frame(height: usable * 0.01)
+                    // Gap: 1%
+                    Color.clear.frame(height: usable * 0.01)
 
-                    // -- Queue: 5% --
+                    // Queue info + Sleep Timer + Radio: 5%
                     queueInfo
                         .frame(height: usable * 0.05)
 
-                    // -- Lyrics --
+                    // Lyrics
                     LyricsView()
                         .padding(.top, 40)
                         .padding(.bottom, safeB + 40)
@@ -111,9 +98,7 @@ struct NowPlayingView: View {
         .frame(width: screenW, height: screenH)
         .clipped()
         .onReceive(playbackProgress.$currentTime) { time in
-            if !isDraggingSlider {
-                localSeekValue = time
-            }
+            if !isDraggingSlider { localSeekValue = time }
         }
         .onAppear {
             localSeekValue = playbackProgress.currentTime
@@ -121,6 +106,9 @@ struct NowPlayingView: View {
         .sheet(isPresented: $showQueue) {
             QueueSheetView()
                 .environmentObject(audioPlayer)
+        }
+        .sheet(isPresented: $showSleepTimer) {   // NEW
+            SleepTimerView()
         }
     }
 
@@ -348,77 +336,115 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Queue Info
+    // MARK: - Queue Info (with Sleep Timer + Infinite Radio)
 
     private var queueInfo: some View {
-    HStack {
-        Button(action: { audioPlayer.toggleShuffle() }) {
-            Image(systemName: "shuffle")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(.white.opacity(audioPlayer.isShuffled ? 1.0 : 0.4))
-        }
-        .frame(width: 44, height: 44)
+        HStack(spacing: 0) {
 
-        Spacer()
-
-        // Sleep Timer button
-        Button {
-            showSleepTimer = true
-        } label: {
-            ZStack {
-                Image(systemName: "moon.fill")
+            // Shuffle
+            Button(action: { audioPlayer.toggleShuffle() }) {
+                Image(systemName: "shuffle")
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(.white.opacity(SleepTimerService.shared.isActive ? 1.0 : 0.4))
-                if SleepTimerService.shared.isActive {
-                    // Countdown badge
-                    Text(SleepTimerService.shared.remainingFormatted)
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundColor(.black)
-                        .padding(.horizontal, 3)
-                        .background(.white)
-                        .clipShape(Capsule())
-                        .offset(x: 10, y: -10)
+                    .foregroundColor(.white.opacity(audioPlayer.isShuffled ? 1.0 : 0.4))
+            }
+            .frame(width: 44, height: 44)
+
+            Spacer()
+
+            // Sleep Timer (NEW)
+            Button(action: { showSleepTimer = true }) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "moon.fill")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(.white.opacity(sleepTimer.isActive ? 1.0 : 0.4))
+                    if sleepTimer.isActive {
+                        Text(sleepTimer.remainingFormatted)
+                            .font(.system(size: 6, weight: .bold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 3)
+                            .padding(.vertical, 1.5)
+                            .background(.white)
+                            .clipShape(Capsule())
+                            .offset(x: 14, y: -8)
+                    }
                 }
             }
-        }
-        .frame(width: 44, height: 44)
+            .frame(width: 44, height: 44)
 
-        Spacer()
+            Spacer()
 
-        // Infinite Radio button
-        Button {
-            Task { await startInfiniteRadio() }
-        } label: {
-            if isLoadingRadio {
-                ProgressView()
-                    .tint(.white.opacity(0.6))
-                    .scaleEffect(0.7)
-            } else {
-                Image(systemName: "dot.radiowaves.left.and.right")
+            // Queue track count (center)
+            if !audioPlayer.queuedTracks.isEmpty {
+                Button(action: { showQueue = true }) {
+                    Text("\(audioPlayer.queuedTracks.count) in queue")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.4))
+                }
+            }
+
+            Spacer()
+
+            // Infinite Radio (NEW)
+            Button(action: {
+                Task { await startInfiniteRadio() }
+            }) {
+                if isLoadingRadio {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .scaleEffect(0.65)
+                        .tint(.white.opacity(0.6))
+                } else {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(.white.opacity(0.4))
+                }
+            }
+            .frame(width: 44, height: 44)
+            .disabled(isLoadingRadio)
+
+            Spacer()
+
+            // Repeat
+            Button(action: { audioPlayer.cycleRepeatMode() }) {
+                Image(systemName: audioPlayer.repeatMode == .one ? "repeat.1" : "repeat")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundColor(.white.opacity(audioPlayer.repeatMode != .off ? 1.0 : 0.4))
+            }
+            .frame(width: 44, height: 44)
+
+            // Queue list
+            Button(action: { showQueue = true }) {
+                Image(systemName: "list.bullet")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundColor(.white.opacity(0.4))
             }
+            .frame(width: 44, height: 44)
         }
-        .frame(width: 44, height: 44)
-        .disabled(isLoadingRadio)
-
-        Spacer()
-
-        Button(action: { audioPlayer.cycleRepeatMode() }) {
-            Image(systemName: audioPlayer.repeatMode == .one ? "repeat.1" : "repeat")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(.white.opacity(audioPlayer.repeatMode != .off ? 1.0 : 0.4))
-        }
-        .frame(width: 44, height: 44)
-
-        Button(action: { showQueue = true }) {
-            Image(systemName: "list.bullet")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(.white.opacity(0.4))
-        }
-        .frame(width: 44, height: 44)
     }
-}
+
+    // MARK: - Infinite Radio
+
+    private func startInfiniteRadio() async {
+        guard let track = audioPlayer.currentTrack else { return }
+        isLoadingRadio = true
+        defer { isLoadingRadio = false }
+
+        do {
+            let recommendations = try await MonochromeAPI().fetchRecommendations(trackId: track.id)
+            guard !recommendations.isEmpty else {
+                print("[Radio] No recommendations returned for track \(track.id)")
+                return
+            }
+            for rec in recommendations {
+                audioPlayer.addToQueue(track: rec)
+            }
+            print("[Radio] Added \(recommendations.count) tracks to queue")
+        } catch {
+            print("[Radio] Failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Helpers
 
     private func formatTime(_ time: TimeInterval) -> String {
         guard time > 0 && !time.isNaN else { return "0:00" }
