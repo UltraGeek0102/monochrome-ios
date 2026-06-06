@@ -102,13 +102,6 @@ struct MainTabView: View {
             }
         }
         .gesture(tabSwipeGesture)
-        .tabViewBottomAccessory {
-            if audioPlayer.currentTrack != nil {
-                MiniPlayerView(expansion: $playerExpansion)
-                    .opacity(playerExpansion > 0 ? 0 : 1)
-                    .allowsHitTesting(playerExpansion == 0)
-            }
-        }
         .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
