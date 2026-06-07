@@ -399,7 +399,7 @@ struct SettingsView: View {
 
 // MARK: - Settings Section (unchanged)
 
-private struct SettingsSection<Content: View>: View {
+struct SettingsSection<Content: View>: View {
     let title: String
     @ViewBuilder let content: () -> Content
 
@@ -428,13 +428,14 @@ private struct SettingsSection<Content: View>: View {
 
 // MARK: - Settings Row (unchanged)
 
-private struct SettingsRow: View {
+struct SettingsRow: View {
     let icon: String
     let title: String
     var value: String = ""
     var isAction: Bool = false
     var isDisabled: Bool = false
     var showChevron: Bool = true
+    var valueTruncationMode: Text.TruncationMode = .tail
     var action: (() -> Void)? = nil
 
     var body: some View {
@@ -458,6 +459,7 @@ private struct SettingsRow: View {
                         .font(.system(size: 13))
                         .foregroundColor(Theme.mutedForeground)
                         .lineLimit(1)
+                        .truncationMode(valueTruncationMode)
                 }
 
                 if showChevron && !isDisabled && action != nil {
@@ -476,7 +478,7 @@ private struct SettingsRow: View {
 
 // MARK: - Settings Toggle Row (unchanged)
 
-private struct SettingsToggleRow: View {
+struct SettingsToggleRow: View {
     let icon: String
     let title: String
     @Binding var isOn: Bool
