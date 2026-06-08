@@ -247,8 +247,7 @@ struct ExploreView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(0..<6, id: \.self) { _ in
-                                SkeletonPill()
-                                    .frame(width: 130, height: 170)
+                                SkeletonPill(width: 130, height: 170)
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
                         }
@@ -267,8 +266,7 @@ struct ExploreView: View {
             if vm.isLoadingMixes {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     ForEach(0..<6, id: \.self) { _ in
-                        SkeletonPill()
-                            .frame(height: 160)
+                        SkeletonPill(width: 120, height: 160)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }
