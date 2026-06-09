@@ -3,139 +3,133 @@ import Combine
 
 // MARK: - API Models
 
-struct HotTrack: Identifiable, Decodable {
+struct ExploreResponse: Decodable {
+    let top_albums: [ExploreAlbum]?
+    let top_tracks: [ExploreTrack]?
+    let featured_playlists: [ExplorePlaylist]?
+    let sections: [ExploreSection]?
+}
+
+struct ExploreTrack: Identifiable, Decodable {
     let id: Int
     let title: String
-    let artist: String
-    let cover: String?
-    let rank: Int?
-}
+    let artist: ExploreArtistRef?
+    let album: ExploreAlbumRef?
 
-struct HotGenre: Identifiable, Decodable {
-    let id: String
-    let name: String
-    let tracks: [HotTrack]
-}
+    struct ExploreArtistRef: Decodable { let name: String? }
+    struct ExploreAlbumRef: Decodable { let cover: String?; let title: String? }
 
-struct MixItem: Identifiable, Decodable {
-    let id: String
-    let title: String?
-    let images: [MixImage]?
-
-    struct MixImage: Decodable {
-        let url: String?
-        let width: Int?
-        let height: Int?
+    var artistName: String { artist?.name ?? "Unknown Artist" }
+    var coverUrl: URL? {
+        guard let cover = album?.cover else { return nil }
+        let fmt = cover.replacingOccurrences(of: "-", with: "/")
+        return URL(string: "https://resources.tidal.com/images/\(fmt)/320x320.jpg")
     }
+}
+
+struct ExploreAlbum: Identifiable, Decodable {
+    let id: Int
+    let title: String
+    let cover: String?
+    let artist: ExploreArtistSimple?
+    struct ExploreArtistSimple: Decodable { let name: String? }
+    var coverUrl: URL? {
+        guard let c = cover else { return nil }
+        let fmt = c.replacingOccurrences(of: "-", with: "/")
+        return URL(string: "https://resources.tidal.com/images/\(fmt)/320x320.jpg")
+    }
+}
+
+struct ExplorePlaylist: Identifiable, Decodable {
+    let uuid: String
+    let title: String
+    let image: String?
+    var id: String { uuid }
+    var coverUrl: URL? { image.flatMap { URL(string: $0) } }
+}
+
+struct ExploreSection: Decodable {
+    let title: String?
+    let type: String?
+    let items: [ExploreSectionItem]?
+}
+
+struct ExploreSectionItem: Decodable {
+    let id: Int?
+    let uuid: String?
+    let title: String?
+    let cover: String?
+    let image: String?
+    let artist: ExploreTrack.ExploreArtistRef?
 
     var coverUrl: URL? {
-        guard let urlStr = images?.first(where: { ($0.width ?? 0) >= 480 })?.url
-                        ?? images?.first?.url else { return nil }
-        return URL(string: urlStr)
+        let src = cover ?? image
+        guard let s = src else { return nil }
+        if s.hasPrefix("http") { return URL(string: s) }
+        let fmt = s.replacingOccurrences(of: "-", with: "/")
+        return URL(string: "https://resources.tidal.com/images/\(fmt)/320x320.jpg")
     }
+}
+
+struct ExploreGenre: Identifiable {
+    let id: String
+    let name: String
 }
 
 // MARK: - ViewModel
 
 @MainActor
 class ExploreViewModel: ObservableObject {
-    @Published var genres: [HotGenre] = []
-    @Published var mixes: [MixItem] = []
-    @Published var isLoadingExplore = false
-    @Published var isLoadingMixes = false
+    @Published var trendingTracks: [ExploreTrack] = []
+    @Published var trendingAlbums: [ExploreAlbum] = []
+    @Published var featuredPlaylists: [ExplorePlaylist] = []
+    @Published var extraSections: [ExploreSection] = []
+    @Published var isLoading = false
     @Published var errorMessage: String?
 
-    private let api = MonochromeAPI()
+    let genres: [ExploreGenre] = [
+        .init(id: "hip_hop",         name: "Hip-Hop"),
+        .init(id: "rnb",             name: "R&B / Soul"),
+        .init(id: "pop",             name: "Pop"),
+        .init(id: "indierock",       name: "Rock / Indie"),
+        .init(id: "dance_electronic",name: "Dance & Electronic"),
+        .init(id: "jazz",            name: "Jazz"),
+        .init(id: "classical",       name: "Classical"),
+        .init(id: "metal",           name: "Metal"),
+        .init(id: "latin",           name: "Latin"),
+        .init(id: "reggae",          name: "Reggae"),
+        .init(id: "country",         name: "Country"),
+        .init(id: "blues",           name: "Blues"),
+        .init(id: "kpop",            name: "K-Pop"),
+        .init(id: "americana",       name: "Folk / Americana"),
+        .init(id: "world",           name: "Global"),
+        .init(id: "gospel",          name: "Gospel"),
+        .init(id: "retro",           name: "Legacy"),
+        .init(id: "kids",            name: "Kids"),
+    ]
 
-    func loadExplore() async {
-        guard genres.isEmpty else { return }
-        isLoadingExplore = true
+    func load() async {
+        guard trendingTracks.isEmpty && trendingAlbums.isEmpty else { return }
+        isLoading = true
         errorMessage = nil
-        defer { isLoadingExplore = false }
+        defer { isLoading = false }
 
         do {
             let url = URL(string: "https://hot.monochrome.tf/")!
-            let (data, resp) = try await URLSession.shared.data(from: url)
+            var req = URLRequest(url: url)
+            req.setValue("Monochrome-iOS/1.0", forHTTPHeaderField: "User-Agent")
+            let (data, resp) = try await URLSession.shared.data(for: req)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
-                errorMessage = "Failed to load explore content"
+                errorMessage = "Explore unavailable (server error)"
                 return
             }
-
-            // Response is { genre_id: { name, tracks: [...] } }
-            let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-            let genreOrder = ["hip_hop","rnb","dance_electronic","pop","rock","metal",
-                              "classical","jazz","country","blues","folk","latin","reggae"]
-
-            var result: [HotGenre] = []
-            for key in genreOrder {
-                guard let dict = raw[key] as? [String: Any],
-                      let name = dict["name"] as? String,
-                      let tracksArr = dict["tracks"] as? [[String: Any]] else { continue }
-
-                let tracks: [HotTrack] = tracksArr.prefix(20).compactMap { t in
-                    guard let id = t["id"] as? Int, let title = t["title"] as? String else { return nil }
-                    return HotTrack(
-                        id: id,
-                        title: title,
-                        artist: t["artist"] as? String ?? "",
-                        cover: t["cover"] as? String,
-                        rank: t["rank"] as? Int
-                    )
-                }
-                result.append(HotGenre(id: key, name: name, tracks: tracks))
-            }
-
-            // Append any genres not in the ordered list
-            for (key, value) in raw {
-                guard !genreOrder.contains(key),
-                      let dict = value as? [String: Any],
-                      let name = dict["name"] as? String,
-                      let tracksArr = dict["tracks"] as? [[String: Any]] else { continue }
-                let tracks: [HotTrack] = tracksArr.prefix(20).compactMap { t in
-                    guard let id = t["id"] as? Int, let title = t["title"] as? String else { return nil }
-                    return HotTrack(id: id, title: title, artist: t["artist"] as? String ?? "",
-                                   cover: t["cover"] as? String, rank: t["rank"] as? Int)
-                }
-                result.append(HotGenre(id: key, name: name, tracks: tracks))
-            }
-
-            genres = result
+            let decoded = try JSONDecoder().decode(ExploreResponse.self, from: data)
+            trendingTracks   = decoded.top_tracks        ?? []
+            trendingAlbums   = decoded.top_albums        ?? []
+            featuredPlaylists = decoded.featured_playlists ?? []
+            extraSections    = decoded.sections?.filter { ($0.items?.count ?? 0) > 0 } ?? []
         } catch {
             errorMessage = "Failed to load explore: \(error.localizedDescription)"
-        }
-    }
-
-    func loadMixes(artistId: Int? = nil) async {
-        guard mixes.isEmpty else { return }
-        isLoadingMixes = true
-        defer { isLoadingMixes = false }
-
-        // Fetch a handful of featured mix IDs from TIDAL via the API
-        // Mixes are fetched per-track or per-artist via /mix/?id=
-        // For the explore tab we use a set of known featured TIDAL mix IDs
-        let featuredMixIds = [
-            "000ec0b0dce2a866602c44e8cce25d",
-            "000ec0b0dce2a866602c44e8cce25e",
-            "0009e2080083e8ab7aeae76a43c8b0"
-        ]
-
-        var results: [MixItem] = []
-        for mixId in featuredMixIds {
-            if let mix = try? await api.fetchMix(id: mixId) {
-                results.append(mix)
-            }
-        }
-        mixes = results
-    }
-
-    func playTrack(id: Int, audioPlayer: AudioPlayerService) {
-        Task {
-            if let url = await api.fetchStreamUrlWithFallback(trackId: id, preferredQuality: .high) {
-                // Build a minimal Track for playback
-                if let track = try? await api.fetchTrack(id: id) {
-                    await MainActor.run { audioPlayer.play(track: track) }
-                }
-            }
         }
     }
 }
@@ -146,108 +140,139 @@ struct ExploreView: View {
     @Binding var navigationPath: CompatNavigationPath
     @EnvironmentObject private var audioPlayer: AudioPlayerService
     @StateObject private var vm = ExploreViewModel()
-    @State private var selectedTab: ExploreTab = .hotNew
-
-    enum ExploreTab: String, CaseIterable {
-        case hotNew = "Hot & New"
-        case mixes  = "Mixes"
-    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Tab picker
-            HStack(spacing: 0) {
-                ForEach(ExploreTab.allCases, id: \.self) { tab in
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { selectedTab = tab }
-                    } label: {
-                        Text(tab.rawValue)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(selectedTab == tab ? Theme.foreground : Theme.mutedForeground)
-                            .padding(.vertical, 10)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .background(
-                        VStack {
-                            Spacer()
-                            if selectedTab == tab {
-                                Rectangle()
-                                    .fill(Theme.foreground)
-                                    .frame(height: 2)
-                            }
-                        }
-                    )
-                }
-            }
-            .background(Theme.background)
-            .overlay(Divider().background(Theme.secondary), alignment: .bottom)
-
-            if selectedTab == .hotNew {
-                hotNewContent
-            } else {
-                mixesContent
-            }
-        }
-        .background(Theme.background)
-        .task { await vm.loadExplore() }
-    }
-
-    // MARK: Hot & New
-
-    private var hotNewContent: some View {
         ScrollView {
-            if vm.isLoadingExplore {
-                skeletonGrid
+            if vm.isLoading {
+                loadingView
             } else if let error = vm.errorMessage {
                 Text(error)
                     .foregroundColor(Theme.mutedForeground)
                     .font(.system(size: 14))
+                    .multilineTextAlignment(.center)
                     .padding(40)
             } else {
                 LazyVStack(alignment: .leading, spacing: 28) {
-                    ForEach(vm.genres) { genre in
-                        genreSection(genre)
+                    // Genres grid
+                    genresSection
+
+                    // Trending Tracks
+                    if !vm.trendingTracks.isEmpty {
+                        exploreSection(title: "Trending Tracks") {
+                            ForEach(vm.trendingTracks.prefix(20)) { track in
+                                ExploreTrackCard(track: track) {
+                                    playTrack(id: track.id)
+                                }
+                            }
+                        }
                     }
+
+                    // Trending Albums
+                    if !vm.trendingAlbums.isEmpty {
+                        exploreSection(title: "Trending Albums") {
+                            ForEach(vm.trendingAlbums.prefix(20)) { album in
+                                ExploreItemCard(
+                                    title: album.title,
+                                    subtitle: album.artist?.name ?? "",
+                                    coverUrl: album.coverUrl
+                                ) { navigationPath.append(Album(id: album.id, title: album.title, cover: album.cover, numberOfTracks: nil, releaseDate: nil, artist: nil)) }
+                            }
+                        }
+                    }
+
+                    // Featured Playlists
+                    if !vm.featuredPlaylists.isEmpty {
+                        exploreSection(title: "Featured Playlists") {
+                            ForEach(vm.featuredPlaylists.prefix(20)) { pl in
+                                ExploreItemCard(
+                                    title: pl.title,
+                                    subtitle: "Playlist",
+                                    coverUrl: pl.coverUrl
+                                ) { /* navigate to playlist */ }
+                            }
+                        }
+                    }
+
+                    // Extra sections from server
+                    ForEach(vm.extraSections.indices, id: \.self) { i in
+                        let section = vm.extraSections[i]
+                        if let items = section.items, !items.isEmpty {
+                            exploreSection(title: section.title ?? "More") {
+                                ForEach(items.prefix(20).indices, id: \.self) { j in
+                                    let item = items[j]
+                                    ExploreItemCard(
+                                        title: item.title ?? "",
+                                        subtitle: item.artist?.name ?? "",
+                                        coverUrl: item.coverUrl
+                                    ) { }
+                                }
+                            }
+                        }
+                    }
+
                     Color.clear.frame(height: 100)
                 }
                 .padding(.top, 16)
             }
         }
+        .background(Theme.background)
+        .task { await vm.load() }
     }
 
-    private func genreSection(_ genre: HotGenre) -> some View {
+    // MARK: - Genres
+
+    private var genresSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(genre.name)
+            Text("Genres")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundColor(Theme.foreground)
+                .padding(.horizontal, 16)
+
+            let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+            LazyVGrid(columns: cols, spacing: 8) {
+                ForEach(vm.genres) { genre in
+                    Text(genre.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Theme.foreground)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Theme.secondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 0.5))
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    // MARK: - Section wrapper
+
+    private func exploreSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
                 .font(.system(size: 17, weight: .bold))
                 .foregroundColor(Theme.foreground)
                 .padding(.horizontal, 16)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(genre.tracks) { track in
-                        HotTrackCard(track: track, api: MonochromeAPI()) {
-                            vm.playTrack(id: track.id, audioPlayer: audioPlayer)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
+                HStack(spacing: 12) { content() }
+                    .padding(.horizontal, 16)
             }
         }
     }
 
-    private var skeletonGrid: some View {
+    // MARK: - Loading skeleton
+
+    private var loadingView: some View {
         LazyVStack(alignment: .leading, spacing: 28) {
-            ForEach(0..<4, id: \.self) { _ in
+            ForEach(0..<3, id: \.self) { _ in
                 VStack(alignment: .leading, spacing: 10) {
-                    Rectangle()
-                        .fill(Theme.secondary)
-                        .frame(width: 120, height: 16)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .padding(.horizontal, 16)
+                    SkeletonPill(width: 140, height: 16).padding(.horizontal, 16)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(0..<6, id: \.self) { _ in
-                                SkeletonPill(width: 130, height: 170)
+                                SkeletonPill(width: 130, height: 160)
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
                         }
@@ -255,77 +280,40 @@ struct ExploreView: View {
                     }
                 }
             }
+            Color.clear.frame(height: 100)
         }
         .padding(.top, 16)
     }
 
-    // MARK: Mixes
-
-    private var mixesContent: some View {
-        ScrollView {
-            if vm.isLoadingMixes {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ForEach(0..<6, id: \.self) { _ in
-                        SkeletonPill(width: 120, height: 160)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                }
-                .padding(16)
-            } else if vm.mixes.isEmpty {
-                Text("No mixes available")
-                    .foregroundColor(Theme.mutedForeground)
-                    .font(.system(size: 14))
-                    .padding(40)
-            } else {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ForEach(vm.mixes) { mix in
-                        ExploreMixCard(mix: mix, navigationPath: $navigationPath)
-                    }
-                }
-                .padding(16)
+    private func playTrack(id: Int) {
+        Task {
+            if let track = try? await MonochromeAPI().fetchTrack(id: id) {
+                audioPlayer.play(track: track)
             }
-            Color.clear.frame(height: 100)
         }
-        .task { await vm.loadMixes() }
     }
 }
 
-// MARK: - HotTrackCard
+// MARK: - ExploreTrackCard
 
-struct HotTrackCard: View {
-    let track: HotTrack
-    let api: MonochromeAPI
+struct ExploreTrackCard: View {
+    let track: ExploreTrack
     let onTap: () -> Void
-    @State private var isPressed = false
 
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 6) {
-                ZStack(alignment: .topLeading) {
-                    CachedAsyncImage(url: coverUrl) { phase in
-                        if let image = phase.image {
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } else {
-                            Rectangle().fill(Theme.card)
-                                .overlay(Image(systemName: "music.note")
-                                    .foregroundColor(Theme.mutedForeground.opacity(0.4)))
-                        }
-                    }
-                    .frame(width: 130, height: 130)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                    if let rank = track.rank {
-                        Text("#\(rank)")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(.black.opacity(0.6))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .padding(6)
+                CachedAsyncImage(url: track.coverUrl) { phase in
+                    if let img = phase.image {
+                        img.resizable().aspectRatio(contentMode: .fill)
+                    } else {
+                        Rectangle().fill(Theme.card)
+                            .overlay(Image(systemName: "music.note").foregroundColor(Theme.mutedForeground))
                     }
                 }
+                .frame(width: 130, height: 130)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 Text(track.title)
                     .font(.system(size: 12, weight: .semibold))
@@ -333,7 +321,7 @@ struct HotTrackCard: View {
                     .lineLimit(1)
                     .frame(width: 130, alignment: .leading)
 
-                Text(track.artist)
+                Text(track.artistName)
                     .font(.system(size: 11))
                     .foregroundColor(Theme.mutedForeground)
                     .lineLimit(1)
@@ -341,52 +329,44 @@ struct HotTrackCard: View {
             }
         }
         .buttonStyle(.plain)
-        .scaleEffect(isPressed ? 0.95 : 1.0)
-        .animation(.easeInOut(duration: 0.15), value: isPressed)
-        .simultaneousGesture(DragGesture(minimumDistance: 0)
-            .onChanged { _ in isPressed = true }
-            .onEnded { _ in isPressed = false }
-        )
-    }
-
-    private var coverUrl: URL? {
-        guard let cover = track.cover else { return nil }
-        let formatted = cover.replacingOccurrences(of: "-", with: "/")
-        return URL(string: "https://resources.tidal.com/images/\(formatted)/320x320.jpg")
     }
 }
 
-// MARK: - MixCard
+// MARK: - ExploreItemCard (albums, playlists, etc)
 
-struct ExploreMixCard: View {
-    let mix: MixItem
-    @Binding var navigationPath: CompatNavigationPath
+struct ExploreItemCard: View {
+    let title: String
+    let subtitle: String
+    let coverUrl: URL?
+    let onTap: () -> Void
 
     var body: some View {
-        Button {
-            // Mix detail navigation - append mix ID as String for future MixDetailView
-            // For now tapping shows the mix in queue via AudioPlayerService
-        } label: {
+        Button(action: onTap) {
             VStack(alignment: .leading, spacing: 6) {
-                CachedAsyncImage(url: mix.coverUrl) { phase in
-                    if let image = phase.image {
-                        image.resizable().aspectRatio(contentMode: .fill)
+                CachedAsyncImage(url: coverUrl) { phase in
+                    if let img = phase.image {
+                        img.resizable().aspectRatio(contentMode: .fill)
                     } else {
                         Rectangle().fill(Theme.card)
-                            .overlay(Image(systemName: "music.note.list")
-                                .foregroundColor(Theme.mutedForeground.opacity(0.4)))
+                            .overlay(Image(systemName: "music.note").foregroundColor(Theme.mutedForeground))
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .aspectRatio(1, contentMode: .fit)
+                .frame(width: 130, height: 130)
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                if let title = mix.title {
-                    Text(title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(Theme.foreground)
-                        .lineLimit(2)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Theme.foreground)
+                    .lineLimit(1)
+                    .frame(width: 130, alignment: .leading)
+
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(Theme.mutedForeground)
+                        .lineLimit(1)
+                        .frame(width: 130, alignment: .leading)
                 }
             }
         }
