@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     name: Build unsigned IPA
-    runs-on: macos-latest
+    runs-on: macos-15   # Xcode 16.x — stable, public runner
 
     steps:
       - name: Checkout
@@ -16,7 +16,10 @@ jobs:
 
       - name: Select latest Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode.app
+          # List available Xcode versions and pick the newest
+          ls /Applications | grep Xcode
+          XCODE=$(ls /Applications | grep "^Xcode" | sort -V | tail -1)
+          sudo xcode-select -s "/Applications/$XCODE"
           xcodebuild -version
 
       - name: Deduplicate MonochromeAPI additions
