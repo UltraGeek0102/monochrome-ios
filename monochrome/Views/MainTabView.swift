@@ -6,7 +6,7 @@ struct MainTabView: View {
     @State private var searchPath = CompatNavigationPath()
     @State private var libraryPath = CompatNavigationPath()
     @State private var profilePath = CompatNavigationPath()
-    @State private var explorePath = CompatNavigationPath()  // NEW
+    @State private var explorePath = CompatNavigationPath()
     @State private var playerExpansion: CGFloat = 0
     @State private var dragOffset: CGFloat = 0
     @EnvironmentObject private var audioPlayer: AudioPlayerService
@@ -18,8 +18,8 @@ struct MainTabView: View {
         case 0: return $homePath
         case 1: return $searchPath
         case 2: return $libraryPath
-        case 3: return $explorePath  // NEW
-        case 4: return $profilePath  // shifted
+        case 3: return $explorePath
+        case 4: return $profilePath
         default: return $homePath
         }
     }
@@ -39,7 +39,7 @@ struct MainTabView: View {
                 legacyTabView
             }
 
-            // Full-screen player overlay
+            // Full-screen player overlay (always in hierarchy for smooth animation)
             if audioPlayer.currentTrack != nil {
                 let effectiveExp = max(0, min(1,
                     playerExpansion - (dragOffset / fullScreenH)
@@ -53,6 +53,7 @@ struct MainTabView: View {
                     .transition(.identity)
                     .ignoresSafeArea()
             }
+            
         }
         .preferredColorScheme(.dark)
         .background {
@@ -86,7 +87,6 @@ struct MainTabView: View {
                 }
             }
 
-            // NEW: Explore tab
             Tab("Explore", systemImage: "safari", value: 3) {
                 tabNavigationStack(path: $explorePath) {
                     ExploreView(navigationPath: $explorePath)
@@ -110,11 +110,11 @@ struct MainTabView: View {
     private var legacyTabView: some View {
         ZStack(alignment: .bottom) {
             ZStack {
-                legacyNavStack(path: $homePath)    { HomeView(navigationPath: $homePath) }
+                legacyNavStack(path: $homePath) { HomeView(navigationPath: $homePath) }
                     .opacity(tabRouter.selectedTab == 0 ? 1 : 0)
                     .allowsHitTesting(tabRouter.selectedTab == 0)
 
-                legacyNavStack(path: $searchPath)  { SearchView(navigationPath: $searchPath) }
+                legacyNavStack(path: $searchPath) { SearchView(navigationPath: $searchPath) }
                     .opacity(tabRouter.selectedTab == 1 ? 1 : 0)
                     .allowsHitTesting(tabRouter.selectedTab == 1)
 
@@ -122,14 +122,13 @@ struct MainTabView: View {
                     .opacity(tabRouter.selectedTab == 2 ? 1 : 0)
                     .allowsHitTesting(tabRouter.selectedTab == 2)
 
-                // NEW: Explore
                 legacyNavStack(path: $explorePath) {
                     ExploreView(navigationPath: $explorePath)
                         .navigationTitle("Explore")
                         .navigationBarTitleDisplayMode(.large)
                 }
-                .opacity(tabRouter.selectedTab == 3 ? 1 : 0)
-                .allowsHitTesting(tabRouter.selectedTab == 3)
+                    .opacity(tabRouter.selectedTab == 3 ? 1 : 0)
+                    .allowsHitTesting(tabRouter.selectedTab == 3)
 
                 legacyNavStack(path: $profilePath) { ProfileView(navigationPath: $profilePath) }
                     .opacity(tabRouter.selectedTab == 4 ? 1 : 0)
@@ -146,11 +145,10 @@ struct MainTabView: View {
                 }
 
                 HStack(spacing: 0) {
-                    TabBarButton(icon: "house.fill",        label: "Home",    isSelected: tabRouter.selectedTab == 0) { tabRouter.selectedTab = 0 }
-                    TabBarButton(icon: "magnifyingglass",   label: "Search",  isSelected: tabRouter.selectedTab == 1) { tabRouter.selectedTab = 1 }
+                    TabBarButton(icon: "house.fill", label: "Home", isSelected: tabRouter.selectedTab == 0) { tabRouter.selectedTab = 0 }
+                    TabBarButton(icon: "magnifyingglass", label: "Search", isSelected: tabRouter.selectedTab == 1) { tabRouter.selectedTab = 1 }
                     TabBarButton(icon: "books.vertical.fill", label: "Library", isSelected: tabRouter.selectedTab == 2) { tabRouter.selectedTab = 2 }
-                    TabBarButton(icon: "safari",            label: "Explore", isSelected: tabRouter.selectedTab == 3) { tabRouter.selectedTab = 3 }  // NEW
-                    TabBarButton(icon: "person.fill",       label: "Profile", isSelected: tabRouter.selectedTab == 4) { tabRouter.selectedTab = 4 }
+                    TabBarButton(icon: "person.fill", label: "Profile", isSelected: tabRouter.selectedTab == 3) { tabRouter.selectedTab = 3 }
                 }
                 .padding(.top, 10)
                 .padding(.bottom, 8)
@@ -225,7 +223,7 @@ struct MainTabView: View {
                 guard abs(h) > abs(v) * 1.5, abs(h) > 50 else { return }
                 withAnimation(.easeInOut(duration: 0.25)) {
                     if h < 0 {
-                        tabRouter.selectedTab = min(4, tabRouter.selectedTab + 1)  // max 4 now
+                        tabRouter.selectedTab = min(4, tabRouter.selectedTab + 1)
                     } else {
                         tabRouter.selectedTab = max(0, tabRouter.selectedTab - 1)
                     }
@@ -233,7 +231,7 @@ struct MainTabView: View {
             }
     }
 
-    // MARK: - Close drag
+    // MARK: - Close drag (drag down from full player)
 
     private var closeDragGesture: some Gesture {
         DragGesture(minimumDistance: 10)
@@ -279,7 +277,7 @@ struct TabBarButton: View {
     }
 }
 
-// MARK: - Global Swipe-Up Gesture
+// MARK: - Global Swipe-Up Gesture (UIKit window-level, bypasses all SwiftUI gesture blocking)
 
 private struct GlobalSwipeUpHandler: UIViewRepresentable {
     @Binding var expansion: CGFloat
@@ -365,15 +363,21 @@ private struct GlobalSwipeUpHandler: UIViewRepresentable {
             }
         }
 
+        // MARK: UIGestureRecognizerDelegate
+
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
             guard expansionBinding.wrappedValue == 0 else { return false }
+
             let velocity = pan.velocity(in: pan.view)
             let location = pan.location(in: pan.view)
             let screenH = UIScreen.main.bounds.height
+
             let isVertical = abs(velocity.y) > abs(velocity.x)
             let isUpward = velocity.y < 0
+            // Only activate in mini player + tab bar area (~120pt from bottom)
             let isInBottomArea = location.y > screenH - 120
+
             return isVertical && isUpward && isInBottomArea
         }
 
