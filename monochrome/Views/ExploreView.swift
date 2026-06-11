@@ -175,7 +175,7 @@ struct ExploreView: View {
                                     title: album.title,
                                     subtitle: album.artist?.name ?? "",
                                     coverUrl: album.coverUrl
-                                ) { navigationPath.append(Album(id: album.id, title: album.title, cover: album.cover, numberOfTracks: nil, releaseDate: nil, artist: nil)) }
+                                ) { navigationPath.append(Album(id: album.id, title: album.title, cover: album.cover, numberOfTracks: nil, releaseDate: nil, artist: nil, type: nil)) }
                             }
                         }
                     }
