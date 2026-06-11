@@ -8,6 +8,7 @@ struct LoginView: View {
     @State private var password = ""
     @State private var confirmPassword = ""
     @State private var resetSent = false
+    @State private var showWebLogin = false
 
     enum AuthMode {
         case signIn, signUp, resetPassword
@@ -74,6 +75,30 @@ struct LoginView: View {
                     .buttonStyle(.plain)
                     .disabled(authService.isLoading)
                     .padding(.horizontal, 24)
+
+                    // Sign in with Browser (works when direct API is blocked)
+                    Button {
+                        showWebLogin = true
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "safari")
+                                .font(.system(size: 18))
+                            Text("Sign in with Browser")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .foregroundColor(Theme.foreground)
+                        .background(Theme.secondary)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.radiusLg)
+                                .stroke(Theme.border, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
 
                     // Divider
                     HStack {
@@ -203,6 +228,12 @@ struct LoginView: View {
         }
         .background(Theme.background)
         .compatScrollDismissesKeyboard(.interactively)
+        .sheet(isPresented: $showWebLogin, onDismiss: webLoginDismissed) {
+            WebLoginView(isPresented: $showWebLogin) {
+                if authService.isAuthenticated { dismiss() }
+            }
+            .ignoresSafeArea()
+        }
     }
 
     // MARK: - Computed
@@ -250,6 +281,10 @@ struct LoginView: View {
     }
 
     // MARK: - Actions
+
+    private func webLoginDismissed() {
+        if authService.isAuthenticated { dismiss() }
+    }
 
     private func googleSignIn() async {
         do {
