@@ -39,7 +39,22 @@ struct MainTabView: View {
                 legacyTabView
             }
 
-            // Full-screen player overlay (always in hierarchy for smooth animation)
+            // Mini player — sits above the tab bar for iOS 26 path
+            // (legacy path has it built into legacyTabView's VStack)
+            if #available(iOS 26.0, *) {
+                if audioPlayer.currentTrack != nil {
+                    VStack {
+                        Spacer()
+                        MiniPlayerView(expansion: $playerExpansion)
+                            .opacity(playerExpansion > 0 ? 0 : 1)
+                            .allowsHitTesting(playerExpansion == 0)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 90) // sits above the liquid glass tab bar
+                    }
+                }
+            }
+
+            // Full-screen player overlay
             if audioPlayer.currentTrack != nil {
                 let effectiveExp = max(0, min(1,
                     playerExpansion - (dragOffset / fullScreenH)
@@ -53,7 +68,6 @@ struct MainTabView: View {
                     .transition(.identity)
                     .ignoresSafeArea()
             }
-            
         }
         .preferredColorScheme(.dark)
         .background {
