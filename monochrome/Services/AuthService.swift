@@ -199,6 +199,27 @@ class AuthService: ObservableObject {
 
     // MARK: - Sign Out
 
+
+    // MARK: - Password Reset
+
+    func sendPasswordReset(email: String) async throws {
+        await MainActor.run { isLoading = true; errorMessage = nil }
+        defer { Task { await MainActor.run { self.isLoading = false } } }
+
+        // Try better-auth endpoint
+        let url = URL(string: "\(authBase)/api/auth/forget-password")!
+        let body: [String: Any] = [
+            "email": email,
+            "redirectTo": "https://monochrome.tf/reset-password"
+        ]
+        let (data, response) = try await authenticatedRequest(url: url, method: "POST", body: body)
+        guard let http = response as? HTTPURLResponse else { throw AuthError.networkError }
+        if http.statusCode >= 400 {
+            let msg = (try? JSONDecoder().decode(BetterAuthError.self, from: data))?.message ?? "Failed to send reset email"
+            throw AuthError.serverError(msg)
+        }
+    }
+
     func signOut() async {
         // Clear better-auth session
         let _ = try? await authenticatedRequest(url: URL(string: "\(authBase)/api/auth/sign-out")!, method: "POST")
@@ -252,87 +273,6 @@ class AuthService: ObservableObject {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
         return try await urlSession.data(for: request)
-    }
-}
-
-// MARK: - WebLoginView
-// Opens monochrome.tf inside an in-app WKWebView so the user can log in
-// through the real website. Session cookies are shared with AuthService's URLSession.
-
-struct WebLoginView: UIViewControllerRepresentable {
-    @Binding var isPresented: Bool
-    var onSuccess: () -> Void
-
-    func makeUIViewController(context: Context) -> WebLoginViewController {
-        WebLoginViewController(isPresented: $isPresented, onSuccess: onSuccess)
-    }
-    func updateUIViewController(_ vc: WebLoginViewController, context: Context) {}
-}
-
-class WebLoginViewController: UIViewController, WKNavigationDelegate {
-    private var isPresented: Binding<Bool>
-    private var onSuccess: () -> Void
-    private var webView: WKWebView!
-
-    init(isPresented: Binding<Bool>, onSuccess: @escaping () -> Void) {
-        self.isPresented = isPresented
-        self.onSuccess = onSuccess
-        super.init(nibName: nil, bundle: nil)
-    }
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .black
-
-        // Share cookies with the app's HTTPCookieStorage
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = WKWebsiteDataStore.default()
-
-        webView = WKWebView(frame: view.bounds, configuration: config)
-        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        webView.navigationDelegate = self
-        view.addSubview(webView)
-
-        // Close button
-        let closeBtn = UIButton(type: .system)
-        closeBtn.setTitle("Done", for: .normal)
-        closeBtn.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
-        closeBtn.setTitleColor(.white, for: .normal)
-        closeBtn.addTarget(self, action: #selector(close), for: .touchUpInside)
-        closeBtn.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(closeBtn)
-        NSLayoutConstraint.activate([
-            closeBtn.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            closeBtn.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16)
-        ])
-
-        let url = URL(string: "https://monochrome.tf/login")!
-        webView.load(URLRequest(url: url))
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Detect successful login by checking if we're redirected away from /login
-        guard let url = webView.url?.absoluteString else { return }
-        if !url.contains("/login") && url.contains("monochrome.tf") {
-            // Copy WKWebView cookies to HTTPCookieStorage for AuthService
-            WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
-                for cookie in cookies where cookie.domain.contains("monochrome.tf") {
-                    HTTPCookieStorage.shared.setCookie(cookie)
-                }
-                Task {
-                    await AuthService.shared.finishWebLogin()
-                    await MainActor.run {
-                        self.onSuccess()
-                        self.isPresented.wrappedValue = false
-                    }
-                }
-            }
-        }
-    }
-
-    @objc private func close() {
-        isPresented.wrappedValue = false
     }
 }
 
