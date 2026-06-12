@@ -232,7 +232,6 @@ struct LoginView: View {
             WebLoginView(isPresented: $showWebLogin) {
                 if authService.isAuthenticated { dismiss() }
             }
-            .ignoresSafeArea()
         }
     }
 
