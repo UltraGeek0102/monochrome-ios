@@ -11,10 +11,18 @@ class PocketBaseService {
     // MARK: - Get or Create User Record
 
     func getUserRecord(uid: String, forceRefresh: Bool = false) async throws -> PBUserRecord {
-        if !forceRefresh, let cached = cachedRecord, cached.firebase_id == uid {
+        if !forceRefresh, let cached = cachedRecord,
+           cached.firebase_id == uid || cached.id == uid {
             return cached
         }
 
+        // Primary: use /api/sync — works after web login (uses session cookie)
+        if let record = try? await syncViaAuthServer(uid: uid) {
+            cachedRecord = record
+            return record
+        }
+
+        // Fallback: query PocketBase directly with firebase_id (legacy path)
         let filterQuery = "firebase_id=\"\(uid)\""
         guard let encoded = filterQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "\(baseURL)/api/collections/\(collection)/records?filter=\(encoded)&f_id=\(uid)&sort=-username") else {
@@ -32,6 +40,65 @@ class PocketBaseService {
         }
 
         return try await createUserRecord(uid: uid)
+    }
+
+    // Calls auth.monochrome.tf/api/sync using the session cookie set by WebLoginView
+    private func syncViaAuthServer(uid: String) async throws -> PBUserRecord? {
+        guard let url = URL(string: "https://auth.monochrome.tf/api/sync") else { return nil }
+
+        var req = URLRequest(url: url)
+        req.setValue("https://monochrome.tf", forHTTPHeaderField: "Origin")
+        req.setValue("https://monochrome.tf/", forHTTPHeaderField: "Referer")
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+
+        // Attach bearer token if available
+        if let token = UserDefaults.standard.string(forKey: "monochrome_auth_token") {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, response) = try await urlSession.data(for: req)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+
+        // Response: { appUserId, profile, library, history, userPlaylists, userFolders }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+
+        let appUserId = json["appUserId"] as? String ?? uid
+        let profile = json["profile"] as? [String: Any] ?? [:]
+        let library = json["library"] as? [String: Any] ?? [:]
+        let history = json["history"] as? [[String: Any]] ?? []
+        let userPlaylists = json["userPlaylists"] as? [String: Any] ?? [:]
+        let userFolders = json["userFolders"] as? [String: Any] ?? [:]
+
+        // Encode nested objects back to JSON strings for PBUserRecord compat
+        func encode(_ obj: Any) -> String? {
+            guard let d = try? JSONSerialization.data(withJSONObject: obj),
+                  let s = String(data: d, encoding: .utf8) else { return nil }
+            return s
+        }
+
+        // Build a synthetic PBUserRecord from the sync response
+        // We use JSON init since PBUserRecord has a complex custom decoder
+        var recordDict: [String: Any] = [
+            "id": appUserId,
+            "firebase_id": uid,
+            "library":         encode(library) ?? "{}",
+            "history":         encode(history) ?? "[]",
+            "user_playlists":  encode(userPlaylists) ?? "{}",
+            "user_folders":    encode(userFolders) ?? "{}",
+        ]
+
+        // Profile fields
+        for key in ["username", "display_name", "avatar_url", "banner",
+                    "status", "about", "website", "lastfm_username"] {
+            if let val = profile[key] { recordDict[key] = val }
+        }
+        if let privacy = profile["privacy"] { recordDict["privacy"] = encode(privacy) ?? "{}" }
+        if let favAlbums = profile["favorite_albums"] { recordDict["favorite_albums"] = encode(favAlbums) ?? "[]" }
+
+        guard let recordData = try? JSONSerialization.data(withJSONObject: recordDict),
+              let record = try? JSONDecoder().decode(PBUserRecord.self, from: recordData) else { return nil }
+
+        return record
     }
 
     func clearCache() {
