@@ -66,10 +66,21 @@ class WebLoginViewController: UIViewController, WKNavigationDelegate {
         closeBtn.setTitle("Done", for: .normal)
         closeBtn.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
         closeBtn.setTitleColor(.white, for: .normal)
-        closeBtn.backgroundColor = UIColor(white: 0.15, alpha: 1)
-        closeBtn.layer.cornerRadius = 16
-        closeBtn.contentEdgeInsets = UIEdgeInsets(top: 6, left: 14, bottom: 6, right: 14)
         closeBtn.translatesAutoresizingMaskIntoConstraints = false
+        if #available(iOS 15.0, *) {
+            var config = UIButton.Configuration.filled()
+            config.baseBackgroundColor = UIColor(white: 0.15, alpha: 1)
+            config.baseForegroundColor = .white
+            config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 14)
+            closeBtn.configuration = config
+        } else {
+            var config = UIButton.Configuration.filled()
+        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 14)
+        config.baseBackgroundColor = UIColor(white: 0.15, alpha: 1)
+        config.baseForegroundColor = .white
+        config.cornerStyle = .capsule
+        closeBtn.configuration = config
+        }
         closeBtn.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         view.addSubview(closeBtn)
 
