@@ -1,4 +1,6 @@
 import SwiftUI
+import Combine
+import Combine
 
 // MARK: - Home ViewModel
 
@@ -103,7 +105,6 @@ class HomeViewModel: ObservableObject {
         if let arr = json["albums"] as? [[String: Any]] { items = arr }
         else if let arr = json["singles"] as? [[String: Any]] { items = arr }
         else if let arr = json["data"] as? [[String: Any]] { items = arr }
-        else if let arr = json as? [[String: Any]] { items = arr }  // direct array
         else { return [] }
 
         return items.prefix(15).compactMap { a in
@@ -397,7 +398,7 @@ struct HomeView: View {
         case "artist":
             Task {
                 if let detail = try? await MonochromeAPI().fetchArtist(id: pick.itemId) {
-                    let artist = Artist(id: detail.id, name: detail.name, picture: detail.picture)
+                    let artist = Artist(id: detail.id, name: detail.name, picture: detail.picture, popularity: nil)
                     await MainActor.run { navigationPath.append(artist) }
                 }
             }
