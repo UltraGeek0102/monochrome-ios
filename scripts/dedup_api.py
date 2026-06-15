@@ -200,6 +200,26 @@ ADDITION = '''
     }
 '''
 
+# Also strip old stream functions that may exist before our MARKER
+stream_markers = [
+    "    // MARK: - Stream URL",
+    "    private func fetchTidalStreamUrl(",
+    "    func fetchTidalStreamUrl(",
+    "    func fetchStreamUrlWithFallback(",
+]
+for sm in stream_markers:
+    if sm in content and (MARKER not in content or content.index(sm) < content.index(MARKER)):
+        # Remove from this marker to the next top-level func or our MARKER
+        idx = content.index(sm)
+        # Find the end: next "    func " or "    // MARK:" at same indent level
+        search_from = idx + len(sm)
+        next_func = len(content)
+        for candidate in ["\n    func ", "\n    // MARK: -", "\n    private func fetchQ"]:
+            pos = content.find(candidate, search_from)
+            if pos > 0 and pos < next_func:
+                next_func = pos
+        content = content[:idx].rstrip() + "\n" + content[next_func:]
+
 if MARKER in content:
     idx = content.index(MARKER)
     before = content[:idx].rstrip()
