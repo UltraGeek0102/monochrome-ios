@@ -153,20 +153,24 @@ ADDITION = '''
     }
 
     private func extractDashUrl(from xml: String) -> String? {
-        // Extract BaseURL or SegmentTemplate initialization URL from DASH manifest
-        // Look for the first <BaseURL> tag
-        if let range = xml.range(of: "<BaseURL>"),
-           let endRange = xml.range(of: "</BaseURL>", range: range.upperBound..<xml.endIndex) {
-            let url = String(xml[range.upperBound..<endRange.lowerBound])
+        // Look for <BaseURL>https://...</BaseURL> in the DASH manifest
+        let openTag  = "<BaseURL>"
+        let closeTag = "</BaseURL>"
+        if let start = xml.range(of: openTag),
+           let end   = xml.range(of: closeTag, range: start.upperBound..<xml.endIndex) {
+            let url = String(xml[start.upperBound..<end.lowerBound])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if url.hasPrefix("http") { return url }
         }
-        // Fallback: look for initialization="..." attribute
-        if let range = xml.range(of: #"initialization="|'"#, options: .regularExpression) {
-            let after = xml[range.upperBound...]
-            if let end = after.firstIndex(of: "\"") ?? after.firstIndex(of: "'") {
-                let url = String(after[..<end])
-                if url.hasPrefix("http") { return url }
+        // Fallback: look for initialization= attribute (quoted with double or single quote)
+        for marker in ["initialization=\"", "initialization=\'"] {
+            if let start = xml.range(of: marker) {
+                let after = String(xml[start.upperBound...])
+                let terminator: Character = marker.hasSuffix("\"") ? "\"" : "'"
+                if let end = after.firstIndex(of: terminator) {
+                    let url = String(after[..<end])
+                    if url.hasPrefix("http") { return url }
+                }
             }
         }
         return nil
