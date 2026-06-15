@@ -153,28 +153,28 @@ ADDITION = '''
     }
 
     private func extractDashUrl(from xml: String) -> String? {
-        // Look for <BaseURL>https://...</BaseURL> in the DASH manifest
+        // Look for <BaseURL>https://...</BaseURL>
         let openTag  = "<BaseURL>"
         let closeTag = "</BaseURL>"
-        if let start = xml.range(of: openTag),
-           let end   = xml.range(of: closeTag, range: start.upperBound..<xml.endIndex) {
-            let url = String(xml[start.upperBound..<end.lowerBound])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let s = xml.range(of: openTag),
+           let e = xml.range(of: closeTag, range: s.upperBound..<xml.endIndex) {
+            let url = String(xml[s.upperBound..<e.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
             if url.hasPrefix("http") { return url }
         }
-        // Fallback: look for initialization= attribute (quoted with double or single quote)
-        for marker in ["initialization=\"", "initialization=\'"] {
-            if let start = xml.range(of: marker) {
-                let after = String(xml[start.upperBound...])
-                let terminator: Character = marker.hasSuffix("\"") ? "\"" : "'"
-                if let end = after.firstIndex(of: terminator) {
-                    let url = String(after[..<end])
-                    if url.hasPrefix("http") { return url }
-                }
-            }
+        // Fallback: look for initialization= followed by a quoted URL
+        let needle = "initialization="
+        guard let ns = xml.range(of: needle) else { return nil }
+        let rest = xml[ns.upperBound...]
+        // rest starts with either " or ' followed by the URL
+        guard let firstChar = rest.first else { return nil }
+        let afterQuote = rest.dropFirst()
+        if let qEnd = afterQuote.firstIndex(of: firstChar) {
+            let url = String(afterQuote[..<qEnd])
+            if url.hasPrefix("http") { return url }
         }
         return nil
     }
+
 
     func fetchStreamUrlWithFallback(trackId: Int, preferredQuality: AudioQuality) async -> String? {
         let order: [AudioQuality] = [preferredQuality] + [.hiResLossless, .lossless, .high, .medium, .low]
