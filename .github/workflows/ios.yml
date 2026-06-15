@@ -25,6 +25,20 @@ jobs:
       - name: Deduplicate MonochromeAPI additions
         run: python3 scripts/dedup_api.py
 
+      - name: Validate MonochromeAPI (catch bad chars before Xcode)
+        run: |
+          python3 - << 'PYEOF'
+          import sys
+          with open("monochrome/Services/MonochromeAPI.swift", "r", encoding="utf-8") as f:
+              text = f.read()
+          bad = [('“','“'), ('”','”'), ('‘','‘'), ('’','’')]
+          found = [(i, c, name) for (c, name) in bad for i, ch in enumerate(text) if ch == c]
+          if found:
+              print(f"FAIL: curly quotes found at positions: {found[:5]}")
+              sys.exit(1)
+          print("OK: MonochromeAPI.swift has no curly quotes")
+          PYEOF
+
       - name: Build & Archive
         run: |
           set -e
