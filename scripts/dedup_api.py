@@ -357,16 +357,26 @@ stale_markers = [
 for sm in stale_markers:
     while sm in content:
         s = content.index(sm)
-        depth, i, found_end = 0, s, len(content)
+        # Skip forward to find the opening '{' of the function/struct body
+        i = s
+        while i < len(content) and content[i] != "{":
+            i += 1
+        # Now count braces from the first '{' to find the matching '}'
+        depth = 0
+        found_end = len(content)
         while i < len(content):
-            if content[i] == "{": depth += 1
+            if content[i] == "{":
+                depth += 1
             elif content[i] == "}":
                 depth -= 1
                 if depth == 0:
                     found_end = i + 1
                     break
             i += 1
-        content = content[:s].rstrip() + "\n" + content[found_end:].lstrip("\n")
+        # Remove trailing newlines after the stripped block too
+        while found_end < len(content) and content[found_end] in ("\n", "\r"):
+            found_end += 1
+        content = content[:s].rstrip() + "\n" + content[found_end:]
         print(f"Stripped: {sm[:50]}")
 
 # Always strip existing Radio/Mix section and reinsert clean version
