@@ -315,7 +315,7 @@ RADIO_ADDITION = '''
     // MARK: - Infinite Radio / Recommendations
 
     func fetchRecommendations(trackId: Int) async throws -> [Track] {
-        guard let data = try? await fetchData(path: "/recommendations/?id=\\(trackId)") else { return [] }
+        guard let data = (try? await fetchData(path: "/recommendations/?id=\\(trackId)")) else { return [] }
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let dataDict = json["data"] as? [String: Any],
            let items = dataDict["items"] as? [[String: Any]],
@@ -348,13 +348,44 @@ RADIO_ADDITION = '''
 
 '''
 
-if RADIO_MARKER not in content:
-    if END_MARKER in content:
-        end = content.index(END_MARKER)
-        content = content[:end] + RADIO_ADDITION + content[end:]
-    print("Added Radio/Mix/Recommendations section")
-else:
-    print("Radio section already present")
+# Strip any stale MixItem / old mix functions anywhere in the file first
+stale_markers = [
+    "    private struct MixDetail",
+    "    func fetchMix(id: String) async throws -> MixItem",
+    "    func fetchMixTracks(id: String) async throws -> MixItem",
+]
+for sm in stale_markers:
+    while sm in content:
+        s = content.index(sm)
+        depth, i, found_end = 0, s, len(content)
+        while i < len(content):
+            if content[i] == "{": depth += 1
+            elif content[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    found_end = i + 1
+                    break
+            i += 1
+        content = content[:s].rstrip() + "\n" + content[found_end:].lstrip("\n")
+        print(f"Stripped: {sm[:50]}")
+
+# Always strip existing Radio/Mix section and reinsert clean version
+if RADIO_MARKER in content:
+    r_start = content.index(RADIO_MARKER)
+    # Find end of this section (next MARK or Images)
+    search_from = r_start + len(RADIO_MARKER)
+    section_end = len(content)
+    for candidate in ["\n    // MARK: - Images", "\n    func getImageUrl"]:
+        pos = content.find(candidate, search_from)
+        if 0 < pos < section_end:
+            section_end = pos
+    content = content[:r_start].rstrip() + "\n" + content[section_end:]
+    print("Stripped existing Radio section")
+
+if END_MARKER in content:
+    end = content.index(END_MARKER)
+    content = content[:end] + RADIO_ADDITION + content[end:]
+    print("Inserted fresh Radio/Mix/Recommendations section")
 
 with open(path, "w") as f:
     f.write(content)
